@@ -1,7 +1,7 @@
 const mongoose = require('mongoose')
 
-var Poll = mongoose.model('Poll', {
-    title: {
+var PollSchema = new mongoose.Schema({
+    poll_title: {
         type: String,
         required: true,
         minlength: 2,
@@ -16,16 +16,32 @@ var Poll = mongoose.model('Poll', {
         votes: {
             type: Number,
             default: 0
-        },
-        poll_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            required: true
         }
     }],
     _creator: {
         type: mongoose.Schema.Types.ObjectId,
         required: true
+    },
+    voters: [{
+        ip: String
+    }]
+});
+
+PollSchema.methods.checkUserIP = function(ip) {
+    var poll = this;
+
+    for (var i = 0; i < poll.voters.length; i++) {
+        if (ip === poll.voters[i].ip) {
+            return Promise.resolve({ poll, err: true });
+        }
     }
-})
+
+    // poll.voters.forEach((voter) => {
+
+    // });
+    return Promise.resolve({ poll, err: false });
+}
+
+var Poll = mongoose.model('Poll', PollSchema)
 
 module.exports = { Poll }

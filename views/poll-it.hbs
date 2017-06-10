@@ -1,6 +1,31 @@
 {{> header}}
 
+{{#if script}}
+<script>alert("{{script}}")</script>
+{{/if}}
 
-            
-        
+<div class="jumbotron">
+    <div class="container">
+        <div class="col-md-8 col-md-offset-2">
+            <h3>{{poll_title}}</h3>
+        </div>
+
+        <div class="col-md-6 col-md-offset-3">
+
+            <form method="POST">
+                 <select class="form-control" style="width: 70%; display: inline-block; margin: 0 20px 0 0" name="option">
+                     <option value="null">Click to choose</option>
+                {{#each options}}
+                        <option value="{{value}}">{{value}}</option>
+                {{~/each}}
+                </select>
+                <button class="btn btn-success" type="submit" value="voted" name="submit">Vote!</button>
+            </form>
+
+        </div>
+
+    </div>
+</div>
+
+
 {{> footer}}
