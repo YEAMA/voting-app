@@ -54,10 +54,13 @@
                     </li>
                     {{#if loggedin}}
                     <li>
+                        <a href="#" style="color: aqua">Welcome, {{username}}!</a>
+                    </li>
+                    <li>
                         <a href="/user/polls">My Polls</a>
                     </li>
                     <li>
-                        <a href="#">Logout</a>
+                        <a href="/logout">Logout</a>
                     </li>
                     {{^}}
                     <li>
