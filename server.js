@@ -75,30 +75,46 @@ app.get('/', (req, res) => {
         });
 })
 
+// ************************************************************
+// *
+// *                    POLL SECTION
+
 app.get('/poll/:id', authObjID, (req, res) => {
     var objID = req.params.id;
+    var ipaddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
     Poll.findById(objID)
         .then((poll) => {
-            res.render('poll-it', {
-                title: poll.poll_title,
-                poll_title: poll.poll_title,
-                options: poll.options,
-                url: poll._id
-            })
-        }, (e) => res.status(400).send({
-            page: req.url,
-            error: 'Couldnot fetch polls: ' + e
-        }));
+            return poll.checkUserIP(ipaddress)
+        })
+
+    .then((response) => {
+        var showResults = true;
+        if (!response.err)
+            showResults = false;
+
+        res.render('poll-it', {
+            title: response.poll.poll_title,
+            poll_title: response.poll.poll_title,
+            options: response.poll.options,
+            url: response.poll._id,
+            showResults
+        })
+    })
+
+    .catch((e) => res.status(400).send({
+        page: req.url,
+        error: 'Couldnot fetch polls: ' + e
+    }));
 })
 
 app.post('/poll/:id', authObjID, (req, res) => {
     var objID = req.params.id;
+    var ipaddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
     if (req.body.option === "null") {
         return res.redirect(req.url)
     }
-
-    var ipaddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
     Poll.findById(objID)
 
@@ -133,29 +149,65 @@ app.post('/poll/:id', authObjID, (req, res) => {
 
     .then((poll) => {
         if (poll)
-            return res.render('poll-it', {
-                title: poll.poll_title,
-                poll_title: poll.poll_title,
-                options: poll.options,
-                url: poll._id
-            })
+            return res.redirect('/poll/' + poll._id)
         else
             return res.status(404).render('404')
     })
 
     .catch((e) => {
         if (e.err == 'voted before')
-            return res.render('poll-it', {
-                title: e.poll.poll_title,
-                poll_title: e.poll.poll_title,
-                options: e.poll.options,
-                url: e.poll._id,
-                script: 'You have voted on this poll before!'
-            });
+            return res.redirect('/poll/' + e.poll._id)
         console.log(e);
         res.status(404).send('<script>alert("' + e + '")</script>')
     })
 })
+
+
+// *            !- END POLL SECTION -!
+// *
+// ************************************************************
+
+// ************************************************************
+// *
+// *                SIGN UP SECTION
+
+
+app.get('/signup', (req, res) => {
+    res.render('signing', {
+        title: "Sign Up",
+        signup: true
+    })
+})
+
+
+app.post('/signup', (req, res) => {
+    var fromData = req.body;
+})
+
+
+// *                !- END SIGN UP SECTION -!
+// *
+// ************************************************************
+
+
+// ************************************************************
+// *
+// *                     LOG IN SECTION
+
+app.get('/login', (req, res) => {
+    res.render('signing', {
+        title: "Login",
+        signup: false
+    })
+})
+
+app.post('/login', (req, res) => {
+    var fromData = req.body;
+})
+
+// *                !- END LOG IN SECTION -!
+// *
+// ************************************************************
 
 // FOR DEFAULT 404 PAGE
 app.get('*', function(req, res) {
