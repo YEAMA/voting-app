@@ -9,7 +9,8 @@
         <p>Create Polls, and vote for others!</p>
 
         {{#if loggedin}}
-        <p><a class="btn btn-primary btn-lg" href="/user/polls" role="button">My Polls</a></p>
+        <p><a class="btn btn-primary btn-lg" href="/poll/new" role="button">Create</a>     
+        <a class="btn btn-link btn-lg" href="/user/polls" role="button">My Polls</a></p>
         {{^}}
         <p><a class="btn btn-primary btn-lg" href="/signup" role="button">Sign Up</a>
         <a class="btn btn-link btn-lg" href="/login" role="button">Log in</a></p>        

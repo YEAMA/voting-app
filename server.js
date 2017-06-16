@@ -1,7 +1,6 @@
 var express = require('express');
 var routes = require('./app/routes/index.js');
 var mongoose = require('mongoose');
-// var passport = require('passport');
 var session = require('express-session');
 const hbs = require('hbs');
 const { ObjectID } = require('mongodb');
@@ -10,11 +9,12 @@ const bodyParser = require('body-parser')
 const { Poll } = require('./server/db/models/poll');
 const { authObjID } = require('./server/middleware/authObjID');
 const { appUser } = require('./server/db/models/appUser')
+const { isLoggedin } = require('./server/middleware/isLoggedin')
 
 var app = express();
 require('dotenv').load();
 
-// require('./app/config/passport')(passport);
+const baseURL = "https://fcc-y-voting-app.herokuapp.com";
 
 mongoose.connect(process.env.MONGO_URI);
 mongoose.Promise = global.Promise;
@@ -25,8 +25,6 @@ app.use('/common', express.static(process.cwd() + '/app/common'));
 
 app.use('/css', express.static(process.cwd() + '/public/css'));
 app.use('/js', express.static(process.cwd() + '/public/js'));
-// app.use('/fonts', express.static(process.cwd() + '/public/fonts'));
-// app.use('/img', express.static(process.cwd() + '/public/img'));
 
 
 app.use(bodyParser.urlencoded({
@@ -44,6 +42,7 @@ app.use(session({
     saveUninitialized: false
 }));
 
+// For access to data in handlebars templates
 app.use(function(req, res, next) {
     if (req.session.user) {
         res.locals.loggedin = true;
@@ -53,30 +52,7 @@ app.use(function(req, res, next) {
 })
 
 
-// app.dynamicHelpers({
-//     username: function(req, res) {
-//         if (req.session.user)
-//             return req.session.user.name;
-//     }
-// });
-
-// app.use(passport.initialize());
-// app.use(passport.session());
-
-// routes(app, passport);
-
 app.get('/', (req, res) => {
-    // var poll = new Poll({
-    //     title: "Test",
-    //     options: [{
-    //         value: "test option1",
-    //         votes: 5,
-    //         poll_id: "5939d5193fa56a0011f14563"
-    //     }],
-    //     _creator: "5939d5193fa56a0011f14563"
-    // })
-    // poll.save()
-    //     .then((poll) => console.log(poll))
 
     Poll.find()
         .then((polls) => {
@@ -91,7 +67,7 @@ app.get('/', (req, res) => {
         }, (e) => {
             res.status(400).send({
                 page: req.url,
-                error: 'Couldnot fetch polls' + e
+                error: 'Couldnot fetch polls: ' + e
             })
         });
 })
@@ -100,26 +76,78 @@ app.get('/', (req, res) => {
 // *
 // *                    POLL SECTION
 
+app.get('/poll/new', isLoggedin, (req, res) => {
+    res.render('create-edit', {
+        title: "Create Poll"
+    })
+})
+
+app.post('/poll/new', isLoggedin, (req, res) => {
+    var title = req.body.poll_title;
+    var options = [];
+    var patt = new RegExp("poll_option_\w*");
+
+    for (var key in req.body) {
+        if (patt.test(key)) {
+            options.push({
+                value: req.body[key],
+                votes: 0
+            })
+        }
+    }
+
+    var poll = new Poll({
+        poll_title: title,
+        options,
+        _creator: req.session.user._id
+    });
+
+    poll.save()
+        .then((poll) => {
+            if (poll)
+                return res.redirect('/poll/' + poll._id)
+            res.render('404')
+        })
+
+    .catch((e) => res.send(e))
+})
+
 app.get('/poll/:id', authObjID, (req, res) => {
     var objID = req.params.id;
     var ipaddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    res.locals.myurl = baseURL + req.url;
 
     Poll.findById(objID)
         .then((poll) => {
-            return poll.checkUserIP(ipaddress)
+            if (poll)
+                return poll.checkUserIP(ipaddress)
+            return Promise.reject("Not found!");
         })
 
     .then((response) => {
-        var showResults = true;
+        response.showResults = true;
         if (!response.err)
-            showResults = false;
+            response.showResults = false;
+
+        req.session.results = response;
+        return appUser.findById(response.poll._creator)
+    })
+
+    .then((user) => {
+        var response = req.session.results;
+        req.session.results = null;
+        var addOption = false;
+        if (req.session.user && !response.showResults)
+            addOption = true;
 
         res.render('poll-it', {
             title: response.poll.poll_title,
             poll_title: response.poll.poll_title,
             options: response.poll.options,
             url: response.poll._id,
-            showResults
+            creator: user.name,
+            showResults: response.showResults,
+            addOption
         })
     })
 
@@ -133,14 +161,18 @@ app.post('/poll/:id', authObjID, (req, res) => {
     var objID = req.params.id;
     var ipaddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
-    if (req.body.option === "null") {
+    console.log(req.body);
+
+    if (req.body.option === "null" && req.body.action != 'add_option') {
         return res.redirect(req.url)
     }
 
     Poll.findById(objID)
 
     .then((poll) => {
-        return poll.checkUserIP(ipaddress);
+        if (poll)
+            return poll.checkUserIP(ipaddress);
+        return Promise.reject("Not found!");
     })
 
     .then((response) => {
@@ -148,9 +180,27 @@ app.post('/poll/:id', authObjID, (req, res) => {
         if (response.err)
             return Promise.reject({ poll, err: 'voted before' });
 
+        poll.voters.push({ ip: ipaddress });
+
+
+        if (req.body.action == 'add_option') {
+            poll.options.push({
+                value: req.body.added_option,
+                votes: 1
+            });
+
+            return Poll.findOneAndUpdate({
+                _id: objID
+            }, {
+                $set: {
+                    voters: poll.voters,
+                    options: poll.options
+                }
+            }, { new: true })
+        }
+
         for (var i = 0; i < poll.options.length; i++) {
             if (poll.options[i].value === req.body.option) {
-                poll.voters.push({ ip: ipaddress });
 
                 return Poll.findOneAndUpdate({
                     _id: objID,
@@ -188,12 +238,59 @@ app.post('/poll/:id', authObjID, (req, res) => {
 // *
 // ************************************************************
 
+
+app.get('/user/polls', isLoggedin, (req, res) => {
+    Poll.find({
+            _creator: req.session.user._id
+        })
+        .then((polls) => {
+            res.render('my-polls', {
+                title: 'My Polls',
+                polls,
+                message: req.session.message
+            });
+
+            req.session.message = null;
+        }, (e) => {
+            res.status(400).send({
+                page: req.url,
+                error: 'Could not fetch polls: ' + e
+            })
+        });
+})
+
+app.get('/poll/delete/:id', isLoggedin, authObjID, (req, res) => {
+    var objID = req.params.id;
+
+    Poll.findById(objID)
+
+    .then((poll) => {
+        console.log(poll)
+        if (poll._creator == req.session.user._id)
+            return Poll.findByIdAndRemove(poll._id)
+        else
+            res.render('404');
+    })
+
+    .then((poll) => {
+        if (poll)
+            return res.redirect('/user/polls')
+        res.render('404');
+    })
+
+    .catch((e) => res.status(400).send({ e }))
+})
+
+
 // ************************************************************
 // *
 // *                SIGN UP SECTION
 
 
 app.get('/signup', (req, res) => {
+    if (req.session.user)
+        return res.redirect('/');
+
     res.render('signing', {
         title: "Sign Up",
         signup: true
@@ -259,11 +356,7 @@ app.post('/login', (req, res) => {
             return res.redirect('/')
         }
 
-        res.render('signing', {
-            title: "Login",
-            signup: false,
-            message: "Error logging in!"
-        });
+        return Promise.reject("Error logging in!");
     })
 
     .catch((e) => {
@@ -280,14 +373,15 @@ app.post('/login', (req, res) => {
 // ************************************************************
 
 app.get('/logout', function(req, res) {
-    req.session.destroy(function(err) {
-        if (err) {
-            console.log(err);
-            res.status(500).send(err);
-        } else {
-            res.redirect('/');
-        }
-    });
+    if (req.session.user)
+        req.session.destroy(function(err) {
+            if (err) {
+                console.log(err);
+                res.status(500).send(err);
+            } else {
+                res.redirect('/');
+            }
+        });
 
 });
 

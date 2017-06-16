@@ -4,8 +4,7 @@ var PollSchema = new mongoose.Schema({
     poll_title: {
         type: String,
         required: true,
-        minlength: 2,
-        maxlength: 20,
+        minlength: 10,
         trim: true
     },
     options: [{
@@ -35,10 +34,6 @@ PollSchema.methods.checkUserIP = function(ip) {
             return Promise.resolve({ poll, err: true });
         }
     }
-
-    // poll.voters.forEach((voter) => {
-
-    // });
     return Promise.resolve({ poll, err: false });
 }
 
